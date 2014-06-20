@@ -4,28 +4,25 @@ angular.module('famousAngularStarter')
 .controller('MainCtrl', function ($scope, $famous) {
 
   // Scope variables
-  $scope.numberOfPictures = 3; // number of pictures
-  $scope.offset   = 500; // Y offset from top for where pictures start
+  $scope.numberOfPictures = 4; // number of pictures
+  $scope.offset   = 200; // Y offset from top for where pictures start
   $scope.pictures = []; // array of pictures
 
-  //Physics parameters
-  var repulsionStrength    = 15,
-      repulsionMinRadius   = 1,
-      repulsionMaxRadius   = 5,
-      repulsionCap         = 0.5;
 
   // Famous dependencies
   var GenericSync    = $famous['famous/inputs/GenericSync'];
   var MouseSync      = $famous['famous/inputs/MouseSync'];
-  var TouchSync      = $famous['famous/inputs/TouchSync'];
+  // var TouchSync      = $famous['famous/inputs/TouchSync'];
   var EventHandler   = $famous['famous/core/EventHandler'];
   var PhysicsEngine  = $famous['famous/physics/PhysicsEngine'];
   var Rectangle      = $famous['famous/physics/bodies/Rectangle'];
+  var Circle         = $famous['famous/physics/bodies/Circle'];
   var Repulsion      = $famous['famous/physics/forces/Repulsion'];
   var Spring         = $famous['famous/physics/forces/Spring'];
-  var VectorField = $famous['famous/physics/forces/VectorField'];
-  var Wall          = $famous['famous/physics/constraints/Wall'];
-  // var Drag           = $famous['famous/physics/forces/Drag'];
+  var VectorField    = $famous['famous/physics/forces/VectorField'];
+  var Wall           = $famous['famous/physics/constraints/Wall'];
+  var Drag           = $famous['famous/physics/forces/Drag'];
+  var Collision       = $famous['famous/physics/constraints/Collision'];
 
   // Other dependencies
   // var SlideData      = require(['../images/SlideData']); // not currently being used
@@ -33,7 +30,7 @@ angular.module('famousAngularStarter')
   // Set our sync to listen to mouse and touch events
   GenericSync.register({
     'mouse': MouseSync,
-    'touch': TouchSync
+    // 'touch': TouchSync
   });
 
   var images = [
@@ -56,15 +53,17 @@ angular.module('famousAngularStarter')
     // keep each picture in its own closure scope using immediately invoked function
     (function() {
 
-      var pic = new Rectangle({
-        size: [200, 300],
+      var pic = new Circle({
+        radius: 200,
         position: [450*i + 50, $scope.offset, 1] // starts it, but how to make it continue?
       });
       PE.addBody(pic);
 
+      pic.radius = 100; // because collision detection currently only works for circles
+
       // modify physics rectangle for our needs
       pic.index = i;
-      pic.photo = images[i];
+      // pic.photo = images[i];
       pic._truePosition = pic.getPosition(); // initialize true position
 
       // pipe surface events to event handler 
@@ -75,7 +74,14 @@ angular.module('famousAngularStarter')
       // overriding physics with sync
       pic.override = false;
       pic.sync.on('start', function() { pic.override = true; });
-      pic.sync.on('end', function() { pic.override = false; });
+      pic.sync.on('end', function(data) {
+        // console.log(data);
+        pic.setVelocity([
+          data.velocity[0],
+          data.velocity[1]
+        ]);
+        pic.override = false;
+      });
       pic.sync.on('update', function(data){
         pic.setTruePosition([
           pic._truePosition[0] + data.delta[0],
@@ -85,6 +91,13 @@ angular.module('famousAngularStarter')
 
       pic.setTruePosition = function(position) {
         pic._truePosition = position;
+      };
+
+      pic.scaleSize = function() {
+        return [
+          3 * pic.radius * ((window.innerHeight-pic._truePosition[1])/window.innerHeight) + 300,
+          2 * pic.radius * ((window.innerHeight-pic._truePosition[1])/window.innerHeight) + 200,
+        ];
       };
 
       pic.getTruePosition = function(data) {
@@ -98,19 +111,25 @@ angular.module('famousAngularStarter')
         return pic._truePosition;
       };
 
-
-
       $scope.pictures.push(pic);
 
     })();
   }
 
+  //Physics parameters
+  var repulsionStrength    = 1,
+      repulsionMinRadius   = 30,
+      repulsionMaxRadius   = 300,
+      repulsionCap         = 0.5,
+      repulsionCutOff      = 0.01;
+
   // Define a repulsion
   var repulsion = new Repulsion({
-    strength: repulsionStrength,
-    rMin: repulsionMinRadius,
-    rMax: repulsionMaxRadius,
-    cap: repulsionCap
+    strength: -repulsionStrength,
+    range: [repulsionMinRadius, repulsionMaxRadius],
+    cap: repulsionCap,
+    cutoff: repulsionCutOff,
+    decayFunction : Repulsion.DECAY_FUNCTIONS.INVERSE
   });
 
   // Define a spring
@@ -122,28 +141,35 @@ angular.module('famousAngularStarter')
   });
 
   var gravity = new VectorField({
-      strength : .001,
+      strength : 0.001,
       field : VectorField.FIELDS.CONSTANT,
       direction : [0, 1, 0]
   });
 
   var floor = new Wall({
     normal: [0, -1, 0],
-    distance: window.innerHeight / 2,
-    restitution: 0,
+    distance: window.innerHeight,
+    restitution: 0.3,
     drift: 0
   });
 
   PE.attach(floor);
+  // PE.attach(gravity);
+  PE.attach(new Drag({
+    strength: 0.001,
+    forceFunction : Drag.FORCE_FUNCTIONS.QUADRATIC
+  }));
+
+  var collision = new Collision();
 
   // Attach a spring and repulsion between each picture and the rest of the pictures
   for(i = 0; i < $scope.pictures.length; i++) {
     var rest = $scope.pictures.slice();
     rest.splice(i, 1);
-    // PE.attach(repulsion, rest, $scope.pictures[i]);
-    PE.attach(spring, rest, $scope.pictures[i]);
-    PE.attach(gravity);
-    PE.attach(floor, [$scope.pictures[i]]);
+    PE.attach(repulsion, rest, $scope.pictures[i]);
+    PE.attach(collision, rest, $scope.pictures[i]);
+    // PE.attach(spring, rest, $scope.pictures[i]);
+    // PE.attach(floor, [$scope.pictures[i]]);
 
   }
 

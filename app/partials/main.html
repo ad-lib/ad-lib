@@ -12,7 +12,7 @@
     <fa-modifier
       ng-repeat="picture in pictures"
       fa-translate="picture.getTruePosition()"
-      fa-size="picture.size">
+      fa-size="picture.scaleSize()">
       <fa-image-surface
         class="center-box"
         fa-image-url={{picture.photo}}
